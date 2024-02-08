@@ -1,51 +1,40 @@
 #!/usr/bin/env python
 
+import os
 import os.path
 from pstats import Stats
 import json
-
-try:
-    from urllib.parse import quote
-except ImportError:
-    from urllib import quote
-
-import tornado.ioloop
-import tornado.web
+import urllib.parse
+import http.server
+import socketserver
 
 from .stats import table_rows, json_stats
 
-settings = {
-    'static_path': os.path.join(os.path.dirname(__file__), 'static'),
-    'template_path': os.path.join(os.path.dirname(__file__), 'templates'),
-    'debug': True,
-    'gzip': True
-}
+STATIC_DIR = os.path.join(os.path.dirname(__file__), 'static')
+TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), 'templates')
 
 
-class VizHandler(tornado.web.RequestHandler):
-    def get(self, profile_name):
+class VizHandler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        parsed_url = urllib.parse.urlparse(self.path)
+        profile_name = parsed_url.path.split('/')[-1]
+
         abspath = os.path.abspath(profile_name)
         if os.path.isdir(abspath):
-            self._list_dir(abspath)
+            self.list_dir(abspath)
         else:
             try:
                 s = Stats(profile_name)
-            except:
-                raise RuntimeError('Could not read %s.' % profile_name)
-            self.render(
-                'viz.html', profile_name=profile_name,
-                table_rows=table_rows(s), callees=json_stats(s))
+            except Exception as e:
+                raise RuntimeError('Could not read %s.' % profile_name) from e
+            self.send_response(200)
+            self.send_header('Content-type', 'text/html')
+            self.end_headers()
+            self.wfile.write(self.render_template('viz.html', profile_name=profile_name, table_rows=table_rows(s), callees=json_stats(s)))
 
-    def _list_dir(self, path):
-        """
-        Show a directory listing.
-
-        """
+    def list_dir(self, path):
         entries = os.listdir(path)
-        dir_entries = [[[
-            '..',
-            quote(os.path.normpath(os.path.join(path, '..')), safe='')
-        ]]]
+        dir_entries = [[['..', urllib.parse.quote(os.path.normpath(os.path.join(path, '..')), safe='')]]]
         for name in entries:
             if name.startswith('.'):
                 # skip invisible files/directories
@@ -57,17 +46,25 @@ class VizHandler(tornado.web.RequestHandler):
                 displayname += '/'
             if os.path.islink(fullname):
                 displayname += '@'
-            dir_entries.append(
-                [[displayname, quote(os.path.join(path, linkname), safe='')]])
+            dir_entries.append([[displayname, urllib.parse.quote(os.path.join(path, linkname), safe='')]])
 
-        self.render(
-            'dir.html', dir_name=path, dir_entries=json.dumps(dir_entries))
+        self.send_response(200)
+        self.send_header('Content-type', 'text/html')
+        self.end_headers()
+        self.wfile.write(self.render_template('dir.html', dir_name=path, dir_entries=json.dumps(dir_entries)))
+
+    def render_template(self, template_name, **kwargs):
+        with open(os.path.join(TEMPLATE_DIR, template_name), 'rb') as f:
+            template_content = f.read()
+        return template_content
 
 
-handlers = [(r'/snakeviz/(.*)', VizHandler)]
+class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
+    pass
 
-app = tornado.web.Application(handlers, **settings)
 
 if __name__ == '__main__':
-    app.listen(8080)
-    tornado.ioloop.IOLoop.instance().start()
+    server_address = ('', 8080)
+    httpd = ThreadedHTTPServer(server_address, VizHandler)
+    print("Server running at http://127.0.0.1:8080/")
+    httpd.serve_forever()
