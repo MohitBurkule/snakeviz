@@ -1,5 +1,4 @@
 from __future__ import division
-
 import os.path
 from itertools import chain
 
