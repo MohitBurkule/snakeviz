@@ -1,10 +1,18 @@
 from __future__ import division
-
 import os.path
 from itertools import chain
 
-from tornado.escape import xhtml_escape
+def xhtml_escape(s):
+    """
+    Escape the characters in a string using XML entities.
 
+    """
+    s = s.replace('&', '&amp;')
+    s = s.replace('<', '&lt;')
+    s = s.replace('>', '&gt;')
+    s = s.replace('"', '&quot;')
+    s = s.replace("'", '&#39;')
+    return s
 
 def table_rows(stats):
     """
