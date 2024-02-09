@@ -645,6 +645,7 @@ def json_stats(stats):
 
 
 import os
+import io
 import json
 from jinja2 import Template
 import base64
@@ -652,6 +653,7 @@ from js import base64Content
 from pyodide.http import open_url,pyfetch
 profile_name = "${file.name}"
 content_bytes = base64.b64decode(base64Content)
+content_bytes = io.BytesIO(content_bytes)
 abspath = os.path.abspath(profile_name)
 s = Stats(stream=content_bytes)
 url = "viz.html"
